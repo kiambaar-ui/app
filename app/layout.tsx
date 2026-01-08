@@ -19,6 +19,8 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" />
+        <link rel="shortcut icon" type='image/x-icon' href="https://eservices.muranga.go.ke/images/favicon/favicon-32x32.png" />
+        <link rel="icon" type="image/png" href="https://eservices.muranga.go.ke/images/favicon/favicon-32x32.png" />
       </head>
       <body className={inter.className}>
         <ToasterProvider />
