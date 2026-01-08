@@ -8,6 +8,10 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: "Murang'a County E-Service Portal",
   description: 'Permit Management System',
+  icons: {
+    icon: 'https://eservices.muranga.go.ke/images/favicon/favicon-32x32.png',
+    shortcut: 'https://eservices.muranga.go.ke/images/favicon/favicon-32x32.png',
+  },
 };
 
 export default function RootLayout({
