@@ -4,7 +4,7 @@ import * as bcrypt from 'bcryptjs';
 import * as dotenv from 'dotenv';
 import { eq } from 'drizzle-orm';
 
-dotenv.config({ path: '.env.local' });
+dotenv.config({ path: '.env' });
 
 async function seed() {
     console.log('Seeding admin user...');

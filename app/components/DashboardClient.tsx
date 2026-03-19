@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import SmartDatePicker from './SmartDatePicker';
 import toast from 'react-hot-toast';
@@ -21,8 +21,73 @@ export default function DashboardClient({ permits, userRole, permissions = [] }:
 
     // Logic to determine if "Admin Modules" section should be visible
     const isLegacyAdmin = userRole === 'admin' && (!permissions || permissions.length === 0);
-    const hasAdminModules = isLegacyAdmin || permissions.includes('backups') || permissions.includes('users');
+    const hasAdminModules = isLegacyAdmin || permissions.includes('backups') || permissions.includes('users') || permissions.includes('permits');
     const showAdminControls = hasAdminModules;
+
+    const [backgrounds, setBackgrounds] = useState<any[]>([]);
+    const [isUploadingBg, setIsUploadingBg] = useState(false);
+
+    useEffect(() => {
+        if (hasAdminModules) {
+            fetchBackgrounds();
+        }
+    }, [hasAdminModules]);
+
+    const fetchBackgrounds = async () => {
+        try {
+            const res = await fetch('/api/backgrounds');
+            const data = await res.json();
+            if (Array.isArray(data)) setBackgrounds(data);
+        } catch (e) {
+            console.error('Failed to fetch backgrounds');
+        }
+    };
+
+    const handleBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const name = prompt('Enter a name for this background template:', file.name.replace(/\.[^/.]+$/, ""));
+        if (!name) return;
+
+        setIsUploadingBg(true);
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const res = await fetch('/api/backgrounds', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, data: event.target?.result })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    toast.success('Background uploaded');
+                    fetchBackgrounds();
+                } else {
+                    toast.error('Upload failed: ' + result.error);
+                }
+            } catch (err) {
+                toast.error('Upload failed');
+            } finally {
+                setIsUploadingBg(false);
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const deleteBackground = async (id: number) => {
+        if (!confirm('Delete this background template?')) return;
+        try {
+            const res = await fetch(`/api/backgrounds?id=${id}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) {
+                toast.success('Background deleted');
+                fetchBackgrounds();
+            }
+        } catch (e) {
+            toast.error('Delete failed');
+        }
+    };
 
     // Show banner ONLY if user has NO permissions at all
     const hasAnyPermission = permissions.length > 0 || isLegacyAdmin;
@@ -58,6 +123,10 @@ export default function DashboardClient({ permits, userRole, permissions = [] }:
         setQrModal({ isOpen: false, imgUrl: '', id: null });
     };
 
+    const handleDownload = (serialNumber: number) => {
+        router.push(`/permit/${serialNumber}`);
+    };
+
     const deletePermit = async (permitId: string) => {
         if (!confirm('Are you sure you want to delete this permit?')) {
             return;
@@ -77,6 +146,8 @@ export default function DashboardClient({ permits, userRole, permissions = [] }:
             toast.error('Failed to delete permit');
         }
     };
+
+
 
     const handleRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files?.[0]) return;
@@ -107,10 +178,10 @@ export default function DashboardClient({ permits, userRole, permissions = [] }:
         reader.readAsText(file);
     };
 
+
     return (
         <div className="max-w-7xl mx-auto p-5 font-sans">
             <div className="flex justify-between items-center bg-slate-700 text-white p-4 rounded-t-lg mb-0 text-sm">
-                <h1 className="text-xl font-normal">Permit Dashboard</h1>
                 <div className="flex gap-2">
                     <a href="/profile" className="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded text-white no-underline transition-colors">My Profile</a>
                     <a href="/api/auth/logout" className="bg-red-500 hover:bg-red-600 px-4 py-2 rounded text-white no-underline transition-colors">Logout</a>
@@ -123,10 +194,10 @@ export default function DashboardClient({ permits, userRole, permissions = [] }:
             */}
             <PermissionWrapper permissions={permissions} userRole={userRole} requiredPermission="permits">
                 <div className="bg-white p-6 rounded-b-lg shadow-sm mb-6 border border-gray-200">
-                    <div className="mb-6 border-b-2 border-blue-400 pb-2">
+                    {/* <div className="mb-6 border-b-2 border-blue-400 pb-2">
                         <h2 className="text-2xl font-bold text-gray-700">COUNTY GOVERNMENT OF MURANG&apos;A</h2>
                         <h3 className="text-xl text-center text-gray-500 mt-2">Liquor Permit Verification</h3>
-                    </div>
+                    </div> */}
 
                     <form action="/api/permits" method="POST">
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
@@ -135,6 +206,9 @@ export default function DashboardClient({ permits, userRole, permissions = [] }:
                                 { label: 'Business ID No', name: 'businessId' },
                                 { label: 'Address P.O. Box', name: 'addressPoBox' },
                                 { label: 'Phone No.', name: 'phone' },
+                                { label: 'Owner Name', name: 'ownerName' },
+                                { label: 'Owner Email', name: 'ownerEmail' },
+                                { label: 'Owner Phone', name: 'ownerPhone' },
                                 { label: 'Subcounty', name: 'subcounty' },
                                 { label: 'Ward', name: 'ward' },
                                 { label: 'Market', name: 'market' },
@@ -142,6 +216,12 @@ export default function DashboardClient({ permits, userRole, permissions = [] }:
                                 { label: 'Activity/Business/Profession or Occupation of', name: 'activity' },
                                 { label: 'Permit Amount Paid', name: 'amount' },
                                 { label: 'Kshs in words', name: 'amountInWords' },
+                                { label: 'Paid For Year', name: 'paidForYear' },
+                                { label: 'Renewal Status', name: 'renewalStatus' },
+                                { label: 'Operating Hours', name: 'metadata_operatingHours' },
+                                { label: 'Receipt No.', name: 'metadata_receiptNo' },
+                                { label: 'Road / Street', name: 'metadata_road' },
+                                { label: 'Issued By', name: 'metadata_issuedBy' },
                             ].map((field) => (
                                 <div key={field.name} className="flex flex-col">
                                     <label className="mb-1 text-gray-600 font-bold text-sm">{field.label}:</label>
@@ -160,52 +240,86 @@ export default function DashboardClient({ permits, userRole, permissions = [] }:
                             <div className="flex flex-col">
                                 <SmartDatePicker label="Expiry Date" name="expiryDate" />
                             </div>
+                            <div className="flex flex-col">
+                                <label className="mb-1 text-gray-600 font-bold text-sm">Background Template:</label>
+                                <select name="backgroundId" className="p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-400 text-sm text-black">
+                                    <option value="">Default (None)</option>
+                                    {backgrounds.map(bg => (
+                                        <option key={bg.id} value={bg.id}>{bg.name}</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
 
                         <button type="submit" className="bg-blue-500 text-white font-bold py-3 px-6 rounded hover:bg-blue-600 transition-colors text-sm">
-                            ✓ Create New Permit
+                            ✓ Create New
                         </button>
                     </form>
                 </div>
             </PermissionWrapper>
 
             {/* Admin Controls (Backups & Users) */}
-            {/* Only show if user has at least one admin permission */}
-            {showAdminControls && (
+            {hasAdminModules && (
                 <div className="bg-white p-6 rounded-lg shadow-sm mb-6 border border-gray-200">
-                    <h2
-                        onClick={() => setShowBackups(!showBackups)}
-                        className="text-lg font-bold text-gray-700 cursor-pointer select-none flex items-center gap-2 mb-2 border-b pb-2"
-                    >
-                        <span>{showBackups ? '▼' : '▶'}</span> Admin Modules
-                    </h2>
+                    <div className="flex justify-between items-center border-b pb-2 mb-4">
+                        <h2 className="text-lg font-bold text-gray-700">Administrative Tools</h2>
+                    </div>
 
-                    {showBackups && (
-                        <div className="mt-4 flex gap-4 flex-wrap">
+                    <div className="flex gap-4 flex-wrap">
+
+                        <div className="flex gap-4 mt-2 w-full">
                             {/* Backups Module */}
                             <PermissionWrapper permissions={permissions} userRole={userRole} requiredPermission="backups">
-                                <div className="flex gap-4">
-                                    <a href="/api/backup" className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 text-sm font-bold no-underline inline-block">
-                                        Download Data Backup (JSON)
-                                    </a>
+                                <a href="/api/backup" className="bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200 text-sm font-bold no-underline inline-block border border-gray-300">
+                                    📦 Download Backup
+                                </a>
 
-                                    <label className="bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600 text-sm font-bold cursor-pointer inline-block">
-                                        Restore from Backup
-                                        <input type="file" onChange={handleRestore} className="hidden" accept=".json" />
-                                    </label>
-                                </div>
+                                <label className="bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200 text-sm font-bold cursor-pointer inline-block border border-gray-300">
+                                    📂 Restore
+                                    <input type="file" onChange={handleRestore} className="hidden" accept=".json" />
+                                </label>
                             </PermissionWrapper>
 
-                            {/* Users Module */}
+                             {/* Users Module */}
                             <PermissionWrapper permissions={permissions} userRole={userRole} requiredPermission="users">
-                                <a href="/admin/users" className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 text-sm font-bold no-underline inline-block">
-                                    Manage Users
+                                <a href="/admin/users" className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 text-sm font-bold no-underline inline-block shadow-sm">
+                                    👤 Manage Users
                                 </a>
                             </PermissionWrapper>
-
-                            <p className="w-full mt-2 text-xs text-gray-500">Note: Data processing is handled securely.</p>
                         </div>
-                    )}
+
+                        {/* Background Management */}
+                        <PermissionWrapper permissions={permissions} userRole={userRole} requiredPermission="permits">
+                            <div className="mt-4 w-full border-t pt-4">
+                                <h3 className="text-sm font-bold text-gray-600 mb-3 uppercase tracking-wider">Permit Background Graphics</h3>
+                                <div className="flex gap-3 flex-wrap items-center">
+                                    <label className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm font-bold cursor-pointer inline-block shadow-sm">
+                                        {isUploadingBg ? '⌛ Uploading...' : '🖼️ Upload New Background'}
+                                        <input type="file" onChange={handleBgUpload} className="hidden" accept="image/*" disabled={isUploadingBg} />
+                                    </label>
+                                    
+                                    <div className="flex gap-2 flex-wrap">
+                                        {backgrounds.map(bg => (
+                                            <div key={bg.id} className="group relative flex items-center bg-gray-50 border rounded pl-3 pr-2 py-1.5 gap-2">
+                                                <span className="text-xs font-medium text-gray-700">{bg.name}</span>
+                                                <button 
+                                                    onClick={() => deleteBackground(bg.id)}
+                                                    className="text-gray-400 hover:text-red-500 transition-colors"
+                                                    title="Delete template"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        ))}
+                                        {backgrounds.length === 0 && <span className="text-xs text-gray-400 italic">No backgrounds uploaded yet.</span>}
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-2">These images will be available as templates when creating new permits.</p>
+                            </div>
+                        </PermissionWrapper>
+                    </div>
                 </div>
             )}
 
@@ -230,57 +344,54 @@ export default function DashboardClient({ permits, userRole, permissions = [] }:
             {/* Permit List Section */}
             <PermissionWrapper permissions={permissions} userRole={userRole} requiredPermission="permits">
                 <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                    <h2
-                        onClick={() => setShowPermits(!showPermits)}
-                        className="text-lg font-bold text-gray-700 cursor-pointer select-none flex items-center gap-2 mb-4 border-b pb-2"
-                    >
-                        <span>{showPermits ? '▼' : '▶'}</span> Existing Permits
-                    </h2>
+                    <div className="flex justify-between items-center mb-4 border-b pb-2">
+                        <h2 className="text-lg font-bold text-gray-700 flex items-center gap-2">
+                            <span>📋</span> Existing Records
+                        </h2>
+                    </div>
 
-                    {showPermits && (
-                        <div className="space-y-4">
-                            {permits.length === 0 ? <p className="text-center text-gray-500 py-4">No permits created yet.</p> : (
-                                <>
-                                    {paginatedPermits.map((permit: any) => {
-                                        const permitUrl = typeof window !== 'undefined' ? `${window.location.origin}/permit/${permit.id}` : `/permit/${permit.id}`;
-                                        return (
-                                            <div key={permit.id} className="border border-gray-200 p-4 rounded-lg bg-white mb-4">
-                                                <h3 className="text-gray-700 font-bold mb-1">{permit.businessName}</h3>
-                                                <p className="text-gray-500 text-sm mb-2">ID: {permit.id}</p>
-                                                <div className="flex gap-2 flex-wrap">
-                                                    <a href={`/permit/${permit.id}`} target="_blank" className="bg-blue-500 text-white px-3 py-1.5 rounded hover:bg-blue-600 text-sm font-bold no-underline">View</a>
-                                                    <button onClick={() => showQrCode(permit.id, permitUrl)} className="bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 text-sm font-bold">Show QR</button>
-                                                    <a href={`/api/download-qrcode/${permit.id}`} className="bg-orange-400 text-white px-3 py-1.5 rounded hover:bg-orange-500 text-sm font-bold no-underline">Download</a>
-                                                    <button onClick={() => deletePermit(permit.id)} className="bg-red-500 text-white px-3 py-1.5 rounded hover:bg-red-600 text-sm font-bold">Delete</button>
-                                                </div>
+                    <div className="space-y-4">
+                        {permits.length === 0 ? <p className="text-center text-gray-500 py-4">No created yet.</p> : (
+                            <>
+                                {paginatedPermits.map((permit: any) => {
+                                    const permitUrl = typeof window !== 'undefined' ? `${window.location.origin}/verify-liquor-permit/${permit.serialNumber}` : `/verify-liquor-permit/${permit.serialNumber}`;
+                                    return (
+                                        <div key={permit.id} className="border border-gray-200 p-4 rounded-lg bg-white mb-4">
+                                            <h3 className="text-gray-700 font-bold mb-1">{permit.businessName}</h3>
+                                            <p className="text-gray-500 text-sm mb-2">Serial No: {permit.serialNumber}</p>
+                                            <div className="flex gap-2 flex-wrap">
+                                                <a href={`/verify-liquor-permit/${permit.serialNumber}`} target="_blank" className="bg-blue-500 text-white px-3 py-1.5 rounded hover:bg-blue-600 text-sm font-bold no-underline">View</a>
+                                                <button onClick={() => showQrCode(permit.id, permitUrl)} className="bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 text-sm font-bold">Show QR</button>
+                                                <button onClick={() => handleDownload(permit.serialNumber)} className="bg-orange-400 text-white px-3 py-1.5 rounded hover:bg-orange-500 text-sm font-bold">Download</button>
+                                                <button onClick={() => deletePermit(permit.id)} className="bg-red-500 text-white px-3 py-1.5 rounded hover:bg-red-600 text-sm font-bold">Delete</button>
                                             </div>
-                                        );
-                                    })}
-
-                                    {/* Pagination */}
-                                    {totalPages > 1 && (
-                                        <div className="flex justify-center gap-2 mt-4">
-                                            <button
-                                                disabled={currentPage === 1}
-                                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                                                className={`px-3 py-1 rounded text-sm ${currentPage === 1 ? 'bg-gray-300' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
-                                            >
-                                                Previous
-                                            </button>
-                                            <span className="px-3 py-1 text-sm text-gray-600">Page {currentPage} of {totalPages}</span>
-                                            <button
-                                                disabled={currentPage === totalPages}
-                                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                                                className={`px-3 py-1 rounded text-sm ${currentPage === totalPages ? 'bg-gray-300' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
-                                            >
-                                                Next
-                                            </button>
                                         </div>
-                                    )}
-                                </>
-                            )}
-                        </div>
-                    )}
+                                    );
+                                })}
+
+                                {/* Pagination */}
+                                {totalPages > 1 && (
+                                    <div className="flex justify-center gap-2 mt-4">
+                                        <button
+                                            disabled={currentPage === 1}
+                                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                            className={`px-3 py-1 rounded text-sm ${currentPage === 1 ? 'bg-gray-300' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
+                                        >
+                                            Previous
+                                        </button>
+                                        <span className="px-3 py-1 text-sm text-gray-600">Page {currentPage} of {totalPages}</span>
+                                        <button
+                                            disabled={currentPage === totalPages}
+                                            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                            className={`px-3 py-1 rounded text-sm ${currentPage === totalPages ? 'bg-gray-300' : 'bg-blue-500 text-white hover:bg-blue-600'}`}
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                )}
+                            </>
+                        )}
+                    </div>
                 </div>
             </PermissionWrapper>
 

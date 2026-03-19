@@ -5,9 +5,9 @@ import { decrypt } from './lib/auth';
 export async function middleware(request: NextRequest) {
     const session = request.cookies.get('session')?.value;
 
-    const isAuthPage = request.nextUrl.pathname.startsWith('/login');
+    const isAuthPage = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/muranga/login');
     // NOTE: /api/permits is NOT public. Only /permit/... (view page) is public.
-    const isPublicPage = request.nextUrl.pathname.startsWith('/permit');
+    const isPublicPage = request.nextUrl.pathname.startsWith('/verify-liquor-permit');
     const isApiAuth = request.nextUrl.pathname.startsWith('/api/auth');
 
     if (isPublicPage || isApiAuth) {
