@@ -22,7 +22,7 @@ export default function RootLayout({
         <link rel="shortcut icon" type='image/x-icon' href="https://eservices.muranga.go.ke/images/favicon/favicon-32x32.png" />
         <link rel="icon" type="image/png" href="https://eservices.muranga.go.ke/images/favicon/favicon-32x32.png" />
       </head>
-      <body className={inter.className}>
+      <body className="antialiased">
         <ToasterProvider />
         {children}
       </body>
