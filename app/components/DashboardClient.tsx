@@ -181,82 +181,13 @@ export default function DashboardClient({ permits, userRole, permissions = [] }:
 
     return (
         <div className="max-w-7xl mx-auto p-5 font-sans">
-            <div className="flex justify-between items-center bg-slate-700 text-white p-4 rounded-t-lg mb-0 text-sm">
+            <div className="flex justify-between items-center bg-slate-700 text-white p-4 rounded-lg mb-6 shadow-sm text-sm">
                 <div className="flex gap-2">
-                    <a href="/profile" className="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded text-white no-underline transition-colors">My Profile</a>
-                    <a href="/api/auth/logout" className="bg-red-500 hover:bg-red-600 px-4 py-2 rounded text-white no-underline transition-colors">Logout</a>
+                    <a href="/profile" className="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded text-white no-underline transition-colors flex items-center justify-center">My Profile</a>
+                    <a href="/permit/new" className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-white font-bold no-underline transition-colors shadow-sm flex items-center justify-center gap-1">➕ Add New Permit</a>
+                    <a href="/api/auth/logout" className="bg-red-500 hover:bg-red-600 px-4 py-2 rounded text-white no-underline transition-colors flex items-center justify-center">Logout</a>
                 </div>
             </div>
-
-            {/* Form Section - Require 'permits' permission to create/edit? Or just see? 
-                Let's wrap the CREATE form in 'permits' permission. 
-                Assuming 'permits' permission controls access to the whole permits module. 
-            */}
-            <PermissionWrapper permissions={permissions} userRole={userRole} requiredPermission="permits">
-                <div className="bg-white p-6 rounded-b-lg shadow-sm mb-6 border border-gray-200">
-                    {/* <div className="mb-6 border-b-2 border-blue-400 pb-2">
-                        <h2 className="text-2xl font-bold text-gray-700">COUNTY GOVERNMENT OF MURANG&apos;A</h2>
-                        <h3 className="text-xl text-center text-gray-500 mt-2">Liquor Permit Verification</h3>
-                    </div> */}
-
-                    <form action="/api/permits" method="POST">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-                            {[
-                                { label: 'Business Name/ Owner', name: 'businessName' },
-                                { label: 'Business ID No', name: 'businessId' },
-                                { label: 'Address P.O. Box', name: 'addressPoBox' },
-                                { label: 'Phone No.', name: 'phone' },
-                                { label: 'Owner Name', name: 'ownerName' },
-                                { label: 'Owner Email', name: 'ownerEmail' },
-                                { label: 'Owner Phone', name: 'ownerPhone' },
-                                { label: 'Subcounty', name: 'subcounty' },
-                                { label: 'Ward', name: 'ward' },
-                                { label: 'Market', name: 'market' },
-                                { label: 'Plot No', name: 'plotNo' },
-                                { label: 'Activity/Business/Profession or Occupation of', name: 'activity' },
-                                { label: 'Permit Amount Paid', name: 'amount' },
-                                { label: 'Kshs in words', name: 'amountInWords' },
-                                { label: 'Paid For Year', name: 'paidForYear' },
-                                { label: 'Renewal Status', name: 'renewalStatus' },
-                                { label: 'Operating Hours', name: 'metadata_operatingHours' },
-                                { label: 'Receipt No.', name: 'metadata_receiptNo' },
-                                { label: 'Road / Street', name: 'metadata_road' },
-                                { label: 'Issued By', name: 'metadata_issuedBy' },
-                            ].map((field) => (
-                                <div key={field.name} className="flex flex-col">
-                                    <label className="mb-1 text-gray-600 font-bold text-sm">{field.label}:</label>
-                                    <input type="text" name={field.name} className="p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-400 text-sm text-black" required />
-                                </div>
-                            ))}
-
-                            <div className="flex flex-col">
-                                <label className="mb-1 text-gray-600 font-bold text-sm">Status:</label>
-                                <input type="text" name="status" className="p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-400 text-sm text-black" required />
-                            </div>
-                            <div className="flex flex-col">
-                                {/* Smart Date Picker handles label internally but our layout expects wrapper */}
-                                <SmartDatePicker label="Date of issue" name="issueDate" />
-                            </div>
-                            <div className="flex flex-col">
-                                <SmartDatePicker label="Expiry Date" name="expiryDate" />
-                            </div>
-                            <div className="flex flex-col">
-                                <label className="mb-1 text-gray-600 font-bold text-sm">Background Template:</label>
-                                <select name="backgroundId" className="p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-400 text-sm text-black">
-                                    <option value="">Default (None)</option>
-                                    {backgrounds.map(bg => (
-                                        <option key={bg.id} value={bg.id}>{bg.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-
-                        <button type="submit" className="bg-blue-500 text-white font-bold py-3 px-6 rounded hover:bg-blue-600 transition-colors text-sm">
-                            ✓ Create New
-                        </button>
-                    </form>
-                </div>
-            </PermissionWrapper>
 
             {/* Admin Controls (Backups & Users) */}
             {hasAdminModules && (
@@ -360,11 +291,12 @@ export default function DashboardClient({ permits, userRole, permissions = [] }:
                                             <h3 className="text-gray-700 font-bold mb-1">{permit.businessName}</h3>
                                             <p className="text-gray-500 text-sm mb-2">Serial No: {permit.serialNumber}</p>
                                             <div className="flex gap-2 flex-wrap">
-                                                <a href={`/verify-liquor-permit/${permit.serialNumber}`} target="_blank" className="bg-blue-500 text-white px-3 py-1.5 rounded hover:bg-blue-600 text-sm font-bold no-underline">View</a>
-                                                <button onClick={() => showQrCode(permit.id, permitUrl)} className="bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 text-sm font-bold">Show QR</button>
-                                                <button onClick={() => handleDownload(permit.serialNumber)} className="bg-orange-400 text-white px-3 py-1.5 rounded hover:bg-orange-500 text-sm font-bold">Download</button>
-                                                <button onClick={() => deletePermit(permit.id)} className="bg-red-500 text-white px-3 py-1.5 rounded hover:bg-red-600 text-sm font-bold">Delete</button>
-                                            </div>
+                                                 <a href={`/verify-liquor-permit/${permit.serialNumber}`} target="_blank" className="bg-blue-500 text-white px-3 py-1.5 rounded hover:bg-blue-600 text-sm font-bold no-underline">Verify</a>
+                                                 <a href={`/permit/${permit.serialNumber}`} className="bg-purple-600 text-white px-3 py-1.5 rounded hover:bg-purple-700 text-sm font-bold no-underline">Edit</a>
+                                                 <button onClick={() => showQrCode(permit.id, permitUrl)} className="bg-green-600 text-white px-3 py-1.5 rounded hover:bg-green-700 text-sm font-bold">Show QR</button>
+                                                 <button onClick={() => handleDownload(permit.serialNumber)} className="bg-orange-400 text-white px-3 py-1.5 rounded hover:bg-orange-500 text-sm font-bold">Download</button>
+                                                 <button onClick={() => deletePermit(permit.id)} className="bg-red-500 text-white px-3 py-1.5 rounded hover:bg-red-600 text-sm font-bold">Delete</button>
+                                             </div>
                                         </div>
                                     );
                                 })}

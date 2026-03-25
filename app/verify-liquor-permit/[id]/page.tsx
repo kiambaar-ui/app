@@ -72,9 +72,16 @@ export default async function VerifyPermitPage({ params }: PageProps) {
     const data = permit;
     const isExpired = data.expiryDateIso ? new Date(data.expiryDateIso) < new Date() : false;
 
-    // Aggressive Ksh cleaning
-    let rawAmount = (data.amount || '').replace(/ksh/gi, '').trim();
-    const displayAmount = `Ksh ${rawAmount}`;
+    // Clean and format amount: strip "Ksh"/"KES" prefix, then format with commas
+    let rawAmount = (data.amount || '').replace(/ksh|kes/gi, '').trim();
+    // Try to parse as number and format with commas
+    const numAmount = parseFloat(rawAmount.replace(/,/g, ''));
+    const displayAmount = !isNaN(numAmount)
+        ? `Ksh ${numAmount.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : `Ksh ${rawAmount}`;
+
+    // Strip *** decorators that the permit template adds (e.g. "***Twenty Thousand***")
+    const displayAmountInWords = (data.amountInWords || '').replace(/\*+/g, '').trim();
 
     return (
         <div className={styles.pageBody}>
@@ -85,6 +92,7 @@ export default async function VerifyPermitPage({ params }: PageProps) {
                 </div>
 
                 <p className={styles.p}><strong className={styles.lpStrongLabel}>Business Name:</strong> {data.businessName}</p>
+                <p className={styles.p}><strong className={styles.lpStrongLabel}>License Number:</strong> {data.licenseNumber || 'N/A'}</p>
                 <p className={styles.p}><strong className={styles.lpStrongLabel}>Business ID No:</strong> LLP:{data.serialNumber}</p>
                 <p className={styles.p}><strong className={styles.lpStrongLabel}>Phone No.:</strong> {data.phone}</p>
 
@@ -101,9 +109,9 @@ export default async function VerifyPermitPage({ params }: PageProps) {
                 <p className={styles.p}><strong className={styles.lpStrongLabel}>Plot No:</strong> {data.plotNo || 'N/A'}</p>
 
                 <p className={styles.sectionTitle}>Permit Details</p>
-                <p className={styles.p}><strong className={styles.lpStrongLabel}>Activity/Business/Profession:</strong> {data.activity}</p>
+                <p className={styles.p}><strong className={styles.lpStrongLabel}>Activity/Business/Profession:</strong> {data.activity}{data.operatingHours ? ` operating time ${data.operatingHours}` : ''}</p>
                 <p className={styles.p}><strong className={styles.lpStrongLabel}>Permit Amount Paid:</strong> {displayAmount}</p>
-                <p className={styles.p}><strong className={styles.lpStrongLabel}>Kshs in words:</strong> {data.amountInWords}</p>
+                <p className={styles.p}><strong className={styles.lpStrongLabel}>Kshs in words:</strong> {displayAmountInWords}</p>
                 <p className={styles.p}><strong className={styles.lpStrongLabel}>Date of issue:</strong> {formatDate(data.issueDate)}</p>
                 <p className={styles.p}><strong className={styles.lpStrongLabel}>Expiry Date:</strong> {formatDate(data.expiryDate)}</p>
                 <p className={styles.p}><strong className={styles.lpStrongLabel}>Paid For Year:</strong> {data.paidForYear}</p>

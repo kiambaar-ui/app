@@ -1,13 +1,41 @@
 'use client';
 
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import html2canvas from 'html2canvas';
 import QRCode from 'qrcode';
+import toast from 'react-hot-toast';
+import SmartDatePicker from '../../components/SmartDatePicker';
+
+// ---- Collapsible sidebar section ----
+function CollapsibleSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+    const [open, setOpen] = useState(defaultOpen);
+    return (
+        <div style={{ marginBottom: '6px' }}>
+            <button
+                onClick={() => setOpen(o => !o)}
+                style={{
+                    width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    background: 'rgba(74,108,247,0.18)', border: '1px solid rgba(74,108,247,0.4)',
+                    borderRadius: '6px', padding: '10px 14px', color: '#fff', fontWeight: 700,
+                    fontSize: '12px', cursor: 'pointer', letterSpacing: '0.5px', marginBottom: '2px'
+                }}
+            >
+                {title}
+                <span style={{ transition: 'transform .2s', display: 'inline-block', transform: open ? 'rotate(180deg)' : 'none' }}>▾</span>
+            </button>
+            {open && (
+                <div style={{ padding: '8px 4px 4px' }}>
+                    {children}
+                </div>
+            )}
+        </div>
+    );
+}
 
 interface PermitViewProps {
     data: any;
-    serialNumber: number;
+    serialNumber: number | string;
     initialBackground?: string | null;
 }
 
@@ -18,55 +46,90 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
     const [bgDataUrl, setBgDataUrl] = useState<string>(initialBackground || '');
     const [isGenerating, setIsGenerating] = useState(false);
     const [isIframeReady, setIsIframeReady] = useState(false);
+    
+    const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+    const [isPreviewGenerating, setIsPreviewGenerating] = useState(false);
 
-    // Initial metadata parse
-    const initialMetadata = useMemo(() => {
-        try {
-            return data.metadata ? (typeof data.metadata === 'string' ? JSON.parse(data.metadata) : data.metadata) : {};
-        } catch (e) {
-            return {};
+    const [backgrounds, setBackgrounds] = useState<any[]>([]);
+    
+    useEffect(() => {
+        fetch('/api/backgrounds').then(r => r.json()).then(res => {
+            if (Array.isArray(res)) setBackgrounds(res);
+        }).catch(console.error);
+    }, []);
+
+    const [isSaving, setIsSaving] = useState(false);
+    const [showMobilePreview, setShowMobilePreview] = useState(false);
+
+    // Fetch next serial if we are in "new" mode
+    useEffect(() => {
+        if (serialNumber === 'new') {
+            fetch('/api/permits').then(r => r.json()).then(all => {
+                if (Array.isArray(all)) {
+                    // Simple logic: sort all by serial number and find max
+                    const max = all.reduce((acc, curr) => Math.max(acc, curr.serialNumber || 0), 599);
+                    const next = (max + 1).toString();
+                    setForm(prev => ({ ...prev, serialNo: next, licenseNumber: next }));
+                }
+            }).catch(console.error);
         }
-    }, [data.metadata]);
+    }, [serialNumber]);
 
     // Live state for all fields
     const [form, setForm] = useState({
-        licNo: data.serialNumber?.toString() || '',
-        effDate: data.issueDate || '',
-        expDate: data.expiryDate || '',
+        // == Verify Page Fields ==
+        serialNo: data.serialNumber?.toString() || '',
+        licenseNumber: data.licenseNumber || data.serialNumber?.toString() || '',
         bizName: data.businessName || '',
+        businessId: data.businessId || '',
         phone: data.phone || '',
+        ownerName: data.ownerName || '',
+        ownerEmail: data.ownerEmail || '',
+        ownerPhone: data.ownerPhone || '',
         pobox: data.addressPoBox || 'N/A',
-        activity: data.activity || '',
-        hours: initialMetadata.operatingHours || data.operatingHours || '5:00 PM - 11:00 PM',
-        fee: data.amount || '',
-        feeWords: data.amountInWords || '',
-        receipt: initialMetadata.receiptNo || data.receiptNo || 'N/A',
-        txDate: data.issueDate || '',
-        mode: 'M-Pesa',
         subcounty: data.subcounty || '',
         ward: data.ward || '',
+        market: data.market || '',
         plot: data.plotNo || 'N/A',
-        road: initialMetadata.road || data.road || 'N/A',
+        activity: data.activity || '',
+        fee: (data.amount || '').replace(/ksh|kes/gi, '').trim(),
+        feeWords: (data.amountInWords || '').replace(/\*+/g, '').trim(),
         issueDate: data.issueDate || '',
-        issuedBy: initialMetadata.issuedBy || data.issuedBy || 'Bernad Kariuki -Chair',
+        effDate: data.issueDate || '',
+        expDate: data.expiryDate || '',
+        year: data.paidForYear || new Date().getFullYear().toString(),
+        renewal: data.renewalStatus || 'New',
+        status: data.status || 'Valid',
+        // == Permit Certificate Fields ==
+        hours: data.operatingHours || '5:00 PM - 11:00 PM',
+        receipt: data.receiptNo || 'N/A',
+        txDate: data.txDate || data.issueDate || '',
+        mode: data.mode || 'M-Pesa',
+        road: data.road || 'N/A',
+        issuedBy: data.issuedBy || 'Bernad Kariuki -Chair',
         qrLink: ''
     });
 
     // Set initial QR link once window is available
     useEffect(() => {
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
-        const verifyUrl = `${origin}/verify-liquor-permit/${serialNumber}`;
-        setForm(prev => ({ ...prev, qrLink: verifyUrl }));
-    }, [serialNumber]);
+        const currentSerial = form.serialNo || serialNumber;
+        const verifyUrl = `${origin}/verify-liquor-permit/${currentSerial}`;
+        setForm(prev => {
+            if (prev.qrLink === verifyUrl) return prev;
+            return { ...prev, qrLink: verifyUrl };
+        });
+    }, [serialNumber, form.serialNo]);
 
     const handleInput = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { id, value } = e.target;
-        // Map the IDs from the HTML example to our state keys
         const idMap: Record<string, string> = {
-            f_licno: 'licNo',
+            f_serial: 'serialNo',
+            f_licno: 'licenseNumber',
             f_effdate: 'effDate',
             f_expdate: 'expDate',
             f_bizname: 'bizName',
+            f_businessid: 'businessId',
             f_phone: 'phone',
             f_pobox: 'pobox',
             f_activity: 'activity',
@@ -82,7 +145,14 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
             f_road: 'road',
             f_issuedate: 'issueDate',
             f_issuedby: 'issuedBy',
-            f_qrlink: 'qrLink'
+            f_qrlink: 'qrLink',
+            f_ownername: 'ownerName',
+            f_owneremail: 'ownerEmail',
+            f_ownerphone: 'ownerPhone',
+            f_market: 'market',
+            f_year: 'year',
+            f_renewal: 'renewal',
+            f_status: 'status',
         };
         const key = idMap[id];
         if (key) {
@@ -152,10 +222,17 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
         const target = iframeRef.current.contentWindow;
         if (!target) return;
 
+        // Format fee: strip any prefix, parse, format with commas
+        const rawFeeNum = parseFloat((form.fee || '').replace(/ksh|kes/gi, '').replace(/,/g, '').trim());
+        const formattedFee = !isNaN(rawFeeNum)
+            ? rawFeeNum.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            : form.fee;
+
         target.postMessage({
             type: 'UPDATE',
             form: {
                 ...form,
+                fee: formattedFee,
                 effDate: formatDate(form.effDate),
                 expDate: formatDate(form.expDate),
                 txDate: formatDate(form.txDate),
@@ -165,6 +242,112 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
             qrDataUrl
         }, '*');
     }, [form, bgDataUrl, qrDataUrl, isIframeReady]);
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            const payload = {
+                // Verify page fields
+                serialNumber: form.serialNo ? parseInt(form.serialNo) : undefined,
+                licenseNumber: form.licenseNumber,
+                businessName: form.bizName,
+                businessId: form.businessId,
+                phone: form.phone,
+                ownerName: form.ownerName,
+                ownerEmail: form.ownerEmail,
+                ownerPhone: form.ownerPhone,
+                addressPoBox: form.pobox,
+                subcounty: form.subcounty,
+                ward: form.ward,
+                market: form.market,
+                plotNo: form.plot,
+                activity: form.activity,
+                amount: form.fee,
+                amountInWords: form.feeWords,
+                issueDate: form.issueDate,
+                expiryDate: form.expDate,
+                paidForYear: form.year,
+                renewalStatus: form.renewal,
+                status: form.status,
+                // Permit certificate fields (own columns now)
+                operatingHours: form.hours,
+                receiptNo: form.receipt,
+                txDate: form.txDate,
+                mode: form.mode,
+                road: form.road,
+                issuedBy: form.issuedBy,
+            };
+
+            const isNew = serialNumber === 'new';
+            const res = await fetch(isNew ? `/api/permits` : `/api/permits/${serialNumber}`, {
+                method: isNew ? 'POST' : 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(isNew ? { ...payload, serialNumber: parseInt(form.serialNo) } : payload)
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to save changes');
+            }
+
+            const result = await res.json();
+            if (result.success) {
+                toast.success(isNew ? 'Permit created!' : 'Permit updated!');
+                if (isNew) {
+                    router.push(`/permit/${form.serialNo || result.serialNumber}`);
+                }
+            } else {
+                router.refresh();
+            }
+        } catch (err: any) {
+            console.error('Save failed:', err);
+            toast.error(err.message || 'Failed to save changes. Please try again.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleGeneratePreview = async () => {
+        if (!iframeRef.current || isPreviewGenerating) return;
+        setIsPreviewGenerating(true);
+        toast.loading('Generating preview image...', { id: 'generating-preview' });
+
+        try {
+            const previewHandler = (event: MessageEvent) => {
+                if (event.data.type === 'CAPTURE_DONE') {
+                    setPreviewImageUrl(event.data.dataUrl);
+                    setShowMobilePreview(true);
+                    toast.dismiss('generating-preview');
+                    window.removeEventListener('message', previewHandler);
+                    setIsPreviewGenerating(false);
+                }
+            };
+            window.addEventListener('message', previewHandler);
+
+            iframeRef.current.contentWindow?.postMessage({ 
+                type: 'CAPTURE',
+                form: {
+                    ...form,
+                    effDate: formatDate(form.effDate),
+                    expDate: formatDate(form.expDate),
+                    txDate: formatDate(form.txDate),
+                    issueDate: formatDate(form.issueDate),
+                },
+                bgDataUrl,
+                qrDataUrl
+            }, '*');
+            
+            setTimeout(() => {
+                window.removeEventListener('message', previewHandler);
+                toast.dismiss('generating-preview');
+                setIsPreviewGenerating(false);
+            }, 10000);
+        } catch (err) {
+            console.error('Preview failed:', err);
+            setIsPreviewGenerating(false);
+            toast.error('Failed to generate preview', { id: 'generating-preview' });
+        }
+    };
 
     const handleDownload = async () => {
         if (!iframeRef.current || isGenerating) return;
@@ -176,7 +359,7 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
                 if (event.data.type === 'CAPTURE_DONE') {
                     const link = document.createElement('a');
                     link.href = event.data.dataUrl;
-                    link.download = `liquor-permit-${form.licNo}.png`;
+                    link.download = `liquor-permit-${form.licenseNumber || form.serialNo}.png`;
                     link.click();
                     window.removeEventListener('message', downloadHandler);
                     setIsGenerating(false);
@@ -293,8 +476,8 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
         window.addEventListener('message', (e) => {
             if (e.data.type === 'UPDATE') {
                 const f = e.data.form;
-                document.getElementById('p_licno').textContent = f.licNo;
-                document.getElementById('p_licno2').textContent = f.licNo;
+                document.getElementById('p_licno').textContent = f.licenseNumber;
+                document.getElementById('p_licno2').textContent = f.licenseNumber;
                 document.getElementById('p_effdate').textContent = f.effDate;
                 document.getElementById('p_expdate').textContent = f.expDate;
                 document.getElementById('p_bizname').textContent = f.bizName;
@@ -342,8 +525,8 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
                 const qr = e.data.qrDataUrl;
                 
                 if (f) {
-                    document.getElementById('p_licno').textContent = f.licNo;
-                    document.getElementById('p_licno2').textContent = f.licNo;
+                    document.getElementById('p_licno').textContent = f.licenseNumber;
+                    document.getElementById('p_licno2').textContent = f.licenseNumber;
                     document.getElementById('p_effdate').textContent = f.effDate;
                     document.getElementById('p_expdate').textContent = f.expDate;
                     document.getElementById('p_bizname').textContent = f.bizName;
@@ -431,7 +614,7 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
     }
 
     return (
-        <div style={{ display: 'flex', minHeight: '100vh', background: '#f0ede8', fontFamily: 'Arial, sans-serif', width: '100%' }}>
+        <div className="layout-wrapper" style={{ fontFamily: 'Arial, sans-serif' }}>
             {/* Hidden Iframe Worker for PNG Generation */}
             <iframe
                 ref={iframeRef}
@@ -450,139 +633,238 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
             />
 
             {/* Sidebar View (React State) */}
-            <aside className="no-print" style={{ width: '360px', flexShrink: 0, background: '#1a1a2e', color: '#fff', display: 'flex', flexDirection: 'column', height: '100vh', position: 'sticky', top: 0, overflowY: 'auto' }}>
-                <div style={{ background: '#ec2665', padding: '20px 22px 16px', flexShrink: 0 }}>
-                    <h2 style={{ margin: '0 0 4px', fontSize: '17px', fontWeight: 800 }}>Murang'a County Liquor License</h2>
-                    <p style={{ margin: 0, fontSize: '11px', opacity: 0.8 }}>Fill in the fields — permit updates instantly.</p>
+            <aside className={`no-print sidebar ${showMobilePreview ? 'hidden-mobile' : ''}`}>
+                <div style={{ background: serialNumber === 'new' ? '#10b981' : '#4a6cf7', padding: '20px 22px 16px', flexShrink: 0 }}>
+                    <h2 style={{ margin: '0 0 4px', fontSize: '17px', fontWeight: 800 }}>
+                        {serialNumber === 'new' ? 'Add New Permit' : 'Edit Permit Details'}
+                    </h2>
+                    <p style={{ margin: 0, fontSize: '11px', opacity: 0.8 }}>
+                        {serialNumber === 'new' ? 'Fill in the details below to create a new permit.' : 'Modify fields and click Save to update the record.'}
+                    </p>
                 </div>
 
                 <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1 }}>
-                    <div className="sb-section">Background Template</div>
-                    <div style={{ background: 'rgba(74, 108, 247, .12)', border: '1px dashed #4a6cf7', borderRadius: '6px', padding: '12px' }}>
-                        <p style={{ fontSize: '11px', color: 'rgba(255, 255, 255, .5)', lineHeight: 1.5, marginBottom: '8px' }}>
-                            Upload local <code>liquor_license_bg.png</code> if CORS blocks the server image.
-                        </p>
-                        <label className="btn-file" htmlFor="f_bgfile">📂 Upload Background</label>
-                        <input type="file" id="f_bgfile" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
-                        {bgDataUrl && <div className="bg-status ok">✅ Loaded</div>}
-                    </div>
 
-                    <div className="sb-section">License Details</div>
-                    <div className="sb-field">
-                        <label>License Number</label>
-                        <input type="text" id="f_licno" value={form.licNo} onChange={handleInput} />
-                    </div>
-                    <div className="g2">
+                    {/* === SECTION 1: VERIFY PAGE FIELDS === */}
+                    <CollapsibleSection title="📋 Verify Page Fields" defaultOpen={true}>
+                        <div className="sb-section">Business</div>
                         <div className="sb-field">
-                            <label>Effective Date</label>
-                            <input type="date" id="f_effdate" value={form.effDate} onChange={handleInput} />
+                            <label>Business / Commercial Name</label>
+                            <input type="text" id="f_bizname" value={form.bizName} onChange={handleInput} />
+                        </div>
+                        <div className="g2">
+                            <div className="sb-field">
+                                <label>Business ID No</label>
+                                <input type="text" id="f_businessid" value={form.businessId} onChange={handleInput} />
+                            </div>
+                            <div className="sb-field">
+                                <label>Phone No.</label>
+                                <input type="tel" id="f_phone" value={form.phone} onChange={handleInput} />
+                            </div>
+                        </div>
+
+                        <div className="sb-section">Business Owner</div>
+                        <div className="sb-field">
+                            <label>Owner Name</label>
+                            <input type="text" id="f_ownername" value={form.ownerName} onChange={handleInput} />
                         </div>
                         <div className="sb-field">
-                            <label>Expiry Date</label>
-                            <input type="date" id="f_expdate" value={form.expDate} onChange={handleInput} />
+                            <label>Owner Email</label>
+                            <input type="email" id="f_owneremail" value={form.ownerEmail} onChange={handleInput} />
                         </div>
-                    </div>
+                        <div className="sb-field">
+                            <label>Owner Phone</label>
+                            <input type="tel" id="f_ownerphone" value={form.ownerPhone} onChange={handleInput} />
+                        </div>
 
-                    <div className="sb-section">Applicant / Business</div>
-                    <div className="sb-field">
-                        <label>Business / Commercial Name</label>
-                        <input type="text" id="f_bizname" value={form.bizName} onChange={handleInput} />
-                    </div>
-                    <div className="sb-field">
-                        <label>Business Phone No.</label>
-                        <input type="tel" id="f_phone" value={form.phone} onChange={handleInput} />
-                    </div>
-                    <div className="sb-field">
-                        <label>Business P.O Box</label>
-                        <input type="text" id="f_pobox" value={form.pobox} onChange={handleInput} />
-                    </div>
-                    <div className="sb-field">
-                        <label>Activity / Occupation</label>
-                        <input type="text" id="f_activity" value={form.activity} onChange={handleInput} />
-                    </div>
-                    <div className="sb-field">
-                        <label>Operating Hours</label>
-                        <input type="text" id="f_hours" value={form.hours} onChange={handleInput} />
-                    </div>
+                        <div className="sb-section">Location</div>
+                        <div className="sb-field">
+                            <label>Address P.O. Box</label>
+                            <input type="text" id="f_pobox" value={form.pobox} onChange={handleInput} />
+                        </div>
+                        <div className="g2">
+                            <div className="sb-field">
+                                <label>Sub County</label>
+                                <input type="text" id="f_subcounty" value={form.subcounty} onChange={handleInput} />
+                            </div>
+                            <div className="sb-field">
+                                <label>Ward</label>
+                                <input type="text" id="f_ward" value={form.ward} onChange={handleInput} />
+                            </div>
+                        </div>
+                        <div className="g2">
+                            <div className="sb-field">
+                                <label>Market</label>
+                                <input type="text" id="f_market" value={form.market} onChange={handleInput} />
+                            </div>
+                            <div className="sb-field">
+                                <label>Plot No.</label>
+                                <input type="text" id="f_plot" value={form.plot} onChange={handleInput} />
+                            </div>
+                        </div>
 
-                    <div className="sb-section">Payment</div>
-                    <div className="sb-field">
-                        <label>Permit Fee (KES)</label>
-                        <input type="text" id="f_fee" value={form.fee} onChange={handleInput} />
-                    </div>
-                    <div className="sb-field">
-                        <label>Amount in Words</label>
-                        <textarea id="f_feewords" value={form.feeWords} onChange={handleInput} />
-                    </div>
-                    <div className="g2">
+                        <div className="sb-section">Permit Details</div>
+                        <div className="sb-field">
+                            <label>Activity / Occupation</label>
+                            <input type="text" id="f_activity" value={form.activity} onChange={handleInput} />
+                        </div>
+                        <div className="sb-field">
+                            <label>Permit Fee (KES)</label>
+                            <input type="text" id="f_fee" value={form.fee} onChange={handleInput} />
+                        </div>
+                        <div className="sb-field">
+                            <label>Amount in Words</label>
+                            <textarea id="f_feewords" value={form.feeWords} onChange={handleInput} />
+                        </div>
+                        <div style={{ marginBottom: '10px' }}>
+                            <SmartDatePicker 
+                                name="f_issuedate" 
+                                label="Issue Date" 
+                                initialDate={form.issueDate}
+                                onChange={(val: string) => setForm(prev => ({ ...prev, issueDate: val }))} 
+                            />
+                        </div>
+                        <div style={{ marginBottom: '10px' }}>
+                            <SmartDatePicker 
+                                name="f_expdate" 
+                                label="Expiry Date" 
+                                initialDate={form.expDate}
+                                onChange={(val: string) => setForm(prev => ({ ...prev, expDate: val }))} 
+                            />
+                        </div>
+                        <div className="g2">
+                            <div className="sb-field">
+                                <label>Paid For Year</label>
+                                <input type="text" id="f_year" value={form.year} onChange={handleInput} />
+                            </div>
+                            <div className="sb-field">
+                                <label>Renewal Status</label>
+                                <input type="text" id="f_renewal" value={form.renewal} onChange={handleInput} />
+                            </div>
+                        </div>
+                        <div className="sb-field">
+                            <label>Permit Status</label>
+                            <select id="f_status" value={form.status} onChange={handleInput}>
+                                <option value="Valid">Valid</option>
+                                <option value="Expired">Expired</option>
+                                <option value="Suspended">Suspended</option>
+                                <option value="Revoked">Revoked</option>
+                            </select>
+                        </div>
+                    </CollapsibleSection>
+
+                    {/* === SECTION 2: PERMIT CERTIFICATE FIELDS === */}
+                    <CollapsibleSection title="📄 Permit Certificate Fields" defaultOpen={false}>
+                        <div className="sb-field">
+                            <label>Permit Serial (QR/Verify)</label>
+                            <input type="number" id="f_serial" value={form.serialNo} onChange={handleInput} />
+                        </div>
+                        <div className="sb-field">
+                            <label>License Number (Display)</label>
+                            <input type="text" id="f_licno" value={form.licenseNumber} onChange={handleInput} />
+                        </div>
+                        <div style={{ marginBottom: '10px' }}>
+                            <SmartDatePicker 
+                                name="f_effdate" 
+                                label="Effective Date" 
+                                initialDate={form.effDate}
+                                onChange={(val: string) => setForm(prev => ({ ...prev, effDate: val }))} 
+                            />
+                        </div>
+
+                        <div className="sb-section">Payment</div>
                         <div className="sb-field">
                             <label>Receipt No.</label>
                             <input type="text" id="f_receipt" value={form.receipt} onChange={handleInput} />
                         </div>
-                        <div className="sb-field">
-                            <label>Transaction Date</label>
-                            <input type="date" id="f_txdate" value={form.txDate} onChange={handleInput} />
+                        <div style={{ marginBottom: '10px' }}>
+                            <SmartDatePicker 
+                                name="f_txdate" 
+                                label="Transaction Date" 
+                                initialDate={form.txDate}
+                                onChange={(val: string) => setForm(prev => ({ ...prev, txDate: val }))} 
+                            />
                         </div>
-                    </div>
-                    <div className="sb-field">
-                        <label>Mode of Payment</label>
-                        <select id="f_mode" value={form.mode} onChange={handleInput}>
-                            <option value="M-Pesa">M-Pesa</option>
-                            <option value="Bank Transfer">Bank Transfer</option>
-                            <option value="Cash">Cash</option>
-                            <option value="Cheque">Cheque</option>
-                        </select>
-                    </div>
+                        <div className="sb-field">
+                            <label>Mode of Payment</label>
+                            <select id="f_mode" value={form.mode} onChange={handleInput}>
+                                <option value="M-Pesa">M-Pesa</option>
+                                <option value="Bank Transfer">Bank Transfer</option>
+                                <option value="Cash">Cash</option>
+                                <option value="Cheque">Cheque</option>
+                            </select>
+                        </div>
 
-                    <div className="sb-section">Business Address</div>
-                    <div className="g2">
+                        <div className="sb-section">Activity</div>
                         <div className="sb-field">
-                            <label>Sub County</label>
-                            <input type="text" id="f_subcounty" value={form.subcounty} onChange={handleInput} />
+                            <label>Operating Hours</label>
+                            <input type="text" id="f_hours" value={form.hours} onChange={handleInput} />
                         </div>
-                        <div className="sb-field">
-                            <label>Ward</label>
-                            <input type="text" id="f_ward" value={form.ward} onChange={handleInput} />
-                        </div>
-                    </div>
-                    <div className="sb-field">
-                        <label>Plot No.</label>
-                        <input type="text" id="f_plot" value={form.plot} onChange={handleInput} />
-                    </div>
-                    <div className="sb-field">
-                        <label>Road / Street</label>
-                        <input type="text" id="f_road" value={form.road} onChange={handleInput} />
-                    </div>
 
-                    <div className="sb-section">Issuance</div>
-                    <div className="g2">
+                        <div className="sb-section">Address on Permit</div>
                         <div className="sb-field">
-                            <label>Date of Issue</label>
-                            <input type="date" id="f_issuedate" value={form.issueDate} onChange={handleInput} />
+                            <label>Road / Street</label>
+                            <input type="text" id="f_road" value={form.road} onChange={handleInput} />
                         </div>
+
+                        <div className="sb-section">Issuance</div>
                         <div className="sb-field">
                             <label>Issued By</label>
                             <input type="text" id="f_issuedby" value={form.issuedBy} onChange={handleInput} />
                         </div>
-                    </div>
 
-                    <div className="sb-section">QR Code</div>
-                    <div className="qr-wrap">
+                        <div className="sb-section">Background & QR</div>
+                        <div style={{ background: 'rgba(74, 108, 247, .12)', border: '1px dashed #4a6cf7', borderRadius: '6px', padding: '12px', marginBottom: '10px' }}>
+                            <div style={{ marginBottom: '8px' }}>
+                                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: 'rgba(255,255,255,.8)' }}>Select Existing Template:</label>
+                                <select 
+                                    onChange={(e) => {
+                                        const bg = backgrounds.find(b => b.id === parseInt(e.target.value));
+                                        if (bg) setBgDataUrl(bg.data);
+                                    }} 
+                                    style={{ width: '100%', padding: '6px', borderRadius: '4px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
+                                    defaultValue=""
+                                >
+                                    <option value="" disabled>-- Select a Background --</option>
+                                    {backgrounds.map(bg => (
+                                        <option key={bg.id} value={bg.id}>{bg.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div style={{ textAlign: 'center', fontSize: '12px', color: 'rgba(255,255,255,.5)', marginBottom: '8px' }}>OR</div>
+                            <label className="btn-file" htmlFor="f_bgfile" style={{ width: '100%', display: 'block', textAlign: 'center' }}>📂 Upload Custom Image</label>
+                            <input type="file" id="f_bgfile" accept="image/*" style={{ display: 'none' }} onChange={handleBgUpload} />
+                            {bgDataUrl && <div className="bg-status ok" style={{ marginTop: '8px' }}>✅ Background Loaded</div>}
+                        </div>
                         <div className="sb-field">
                             <label style={{ color: 'rgba(255,255,255,.6)' }}>🔗 Verification URL</label>
                             <input type="url" id="f_qrlink" value={form.qrLink} onChange={handleInput} placeholder="https://…" />
                         </div>
                         {qrDataUrl && <div className="bg-status ok">✅ QR loaded</div>}
-                    </div>
+                    </CollapsibleSection>
                 </div>
 
                 <div style={{ padding: '14px 20px', borderTop: '1px solid rgba(255, 255, 255, .08)', flexShrink: 0 }}>
+                    <button 
+                        onClick={handleSave} 
+                        disabled={isSaving} 
+                        style={{ width: '100%', background: serialNumber === 'new' ? '#10b981' : '#4a6cf7', color: '#fff', border: 'none', padding: '12px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '8px' }}
+                    >
+                        {isSaving ? '⌛ Saving...' : (serialNumber === 'new' ? '✨ Create Permit' : '💾 Save Changes')}
+                    </button>
                     <button 
                         onClick={handleDownload} 
                         disabled={isGenerating} 
                         style={{ width: '100%', background: '#ec2665', color: '#fff', border: 'none', padding: '12px', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}
                     >
                         {isGenerating ? '⌛ Generating...' : '⬇ Download Permit'}
+                    </button>
+                    <button 
+                         className="mobile-preview-btn"
+                         onClick={handleGeneratePreview}
+                         disabled={isPreviewGenerating}
+                    >
+                         {isPreviewGenerating ? '⌛ Generating...' : '👀 Preview Permit Image'}
                     </button>
                     <button 
                          onClick={() => router.back()}
@@ -593,16 +875,39 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
                 </div>
             </aside>
 
-            {/* Main Area matches temple.html 1:1 */}
-            <main style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '32px 20px 40px', overflowY: 'auto' }}>
-                <div style={{ fontSize: '10px', letterSpacing: '2px', textTransform: 'uppercase', color: '#999', marginBottom: '14px' }}>Live Preview — A4</div>
 
-                <div ref={permitRef} id="permitCanvas" className={`permit-page ${!bgDataUrl ? 'no-bg' : ''}`} style={permitBackgroundStyle}>
-                    <div className="duplicate-watermark">DUPLICATE</div>
+
+            {/* Main Area matches temple.html 1:1 */}
+            <main className={`main-area ${showMobilePreview ? 'show-preview' : ''}`}>
+                <div style={{ fontSize: '10px', letterSpacing: '2px', textTransform: 'uppercase', color: '#999', marginBottom: '14px' }}>Live Preview — A4</div>
+                
+                {showMobilePreview && previewImageUrl && (
+                    <div className="preview-modal">
+                        <button className="close-preview-btn show-preview" onClick={() => setShowMobilePreview(false)}>
+                            ✕ Close Preview
+                        </button>
+                        <img className="generated-preview-img" src={previewImageUrl} alt="Permit Preview" />
+                    </div>
+                )}
+
+                <div className={`live-dom-wrapper ${showMobilePreview ? 'hidden-live' : ''}`} style={{ 
+                    width: '100%',
+                    height: 'auto',
+                    display: 'flex', justifyContent: 'center'
+                }}>
+                    <div 
+                        ref={permitRef} 
+                        id="permitCanvas" 
+                        className={`permit-page ${!bgDataUrl ? 'no-bg' : ''}`} 
+                        style={{
+                            ...permitBackgroundStyle
+                        }}
+                    >
+                        <div className="duplicate-watermark">DUPLICATE</div>
                     <div className="overlay">
                         <div className="hdr-right">
                             <div className="license-no-label">LICENSE No.</div>
-                            <p className="license-no">{form.licNo}</p>
+                            <p className="license-no">{form.licenseNumber}</p>
                         </div>
 
                         <div className="body">
@@ -613,7 +918,7 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
                             <div className="section-h">County Government of Murang&apos;a grant this alcoholic drink license to</div>
                             <div className="line">Applicant / Business / Commercial Name: <span className="u">{form.bizName}</span></div>
                             <div className="row2">
-                                <div className="line">License No: <span className="u">{form.licNo}</span></div>
+                                <div className="line">License No: <span className="u">{form.licenseNumber}</span></div>
                                 <div className="line">Business Phone No: <span className="u">{form.phone}</span></div>
                             </div>
                             <div className="row2">
@@ -622,8 +927,8 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
                             </div>
                             <div className="line">To engage in the activity/business or occupation of: <span className="u">{form.activity}</span></div>
                             <div className="line">Operating Hours: <span className="u">{form.hours}</span></div>
-                            <div className="line">Having Paid a business Permit Fee of KES: <span className="u">{form.fee}</span></div>
-                            <div className="line">Amount in words: <span className="u">{form.feeWords}</span></div>
+                            <div className="line">Having Paid a business Permit Fee of KES: <span className="u">{(() => { const n = parseFloat((form.fee || '').replace(/ksh|kes/gi, '').replace(/,/g, '').trim()); return !isNaN(n) ? n.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : form.fee; })()}</span></div>
+                            <div className="line">Amount in words: <span className="u">{form.feeWords ? `*** ${form.feeWords.replace(/\*+/g, '').trim()} ***` : ''}</span></div>
                             <div className="row2">
                                 <div className="line">Receipt No: <span className="u">{form.receipt}</span></div>
                                 <div className="line">Transaction Date: <span className="u">{formatDate(form.txDate)}</span></div>
@@ -642,6 +947,7 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
                             <div className="line">Issued By: <span className="u">{form.issuedBy}</span></div>
                         </div>
                     </div>
+                </div>
                 </div>
             </main>
 
@@ -671,6 +977,40 @@ export default function PermitView({ data, serialNumber, initialBackground }: Pe
                 .u { display: inline-block; padding: 0 2px; border-bottom: 1px solid rgba(0, 0, 0, .6) !important; font-weight: 700; font-size: 14px; color: #000 !important; }
                 .permit-page.no-bg::after { content: '⬆ Upload background image in the sidebar'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #aaa; background: repeating-linear-gradient(45deg, #f9f9f9, #f9f9f9 10px, #f0f0f0 10px, #f0f0f0 20px); pointer-events: none; z-index: 0; }
                 @media print { .no-print { display: none !important; } }
+                
+                /* Layout and Responsive */
+                .layout-wrapper { display: flex; min-height: 100vh; background: #f0ede8; width: 100%; flex-direction: row; }
+                .sidebar { width: 360px; flex-shrink: 0; background: #1a1a2e; color: #fff; display: flex; flex-direction: column; height: 100vh; position: sticky; top: 0; overflow-y: auto; z-index: 50; }
+                .main-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 32px 20px 40px; overflow-y: auto; }
+                .mobile-preview-btn { display: none; width: 100%; background: #10b981; color: #fff; border: none; padding: 12px; border-radius: 5px; font-weight: bold; cursor: pointer; margin-top: 8px; }
+                
+                .preview-modal { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 600px; margin: 0 auto; }
+                .generated-preview-img { width: 100%; max-width: 100%; height: auto; box-shadow: 0 4px 20px rgba(0,0,0,0.15); border-radius: 4px; border: 1px solid #ccc; }
+                .close-preview-btn { display: none; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1a1a2e; color: #fff; padding: 12px 24px; border-radius: 30px; font-weight: bold; border: 2px solid #ec2665; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.3); cursor: pointer; }
+
+                /* Hide preview entirely on desktop so it doesn't leak into the view */
+                @media (min-width: 769px) {
+                    .preview-modal { display: none !important; }
+                    .mobile-preview-btn { display: none !important; }
+                }
+
+                @media (max-width: 768px) {
+                    .layout-wrapper { flex-direction: column; }
+                    .sidebar { width: 100%; height: auto; position: static; display: flex; }
+                    .sidebar.hidden-mobile { display: none; }
+                    
+                    /* Hide live dom on mobile completely if we are showing generated preview */
+                    .hidden-live { display: none !important; }
+
+                    .main-area { display: none; padding: 16px 10px; }
+                    .main-area.show-preview { display: flex; position: fixed; inset: 0; background: #f0ede8; z-index: 40; overflow-y: auto; padding-top: 20px; padding-bottom: 80px; align-items: center; justify-content: flex-start; }
+                    
+                    .mobile-preview-btn { display: block; }
+                    .close-preview-btn.show-preview { display: block; }
+
+                    /* Since Desktop can use zoom or original 1:1, we don't scale desktop, and mobile uses the Image preview. */
+                    .permit-page { zoom: 0.45; }
+                }
             `}</style>
         </div>
     );

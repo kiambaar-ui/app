@@ -3,6 +3,7 @@ import { pgTable, text, timestamp, serial, boolean, integer } from 'drizzle-orm/
 export const permits = pgTable('permits', {
     id: text('id').primaryKey(),
     serialNumber: integer('serialNumber'), // Changed from serial to integer to allow safe push
+    licenseNumber: text('licenseNumber'), // Dedicated field for the text displayed on the permit
     businessName: text('businessName'),
     businessId: text('businessId'),
     addressPoBox: text('addressPoBox'),
@@ -26,7 +27,14 @@ export const permits = pgTable('permits', {
     renewalStatus: text('renewalStatus'),
     templateName: text('templateName'),
     backgroundId: integer('backgroundId'), // ID of the selected background image
-    metadata: text('metadata'), // JSON string of extra fields for generic templates
+    // Permit-certificate specific fields (formerly in metadata JSON)
+    operatingHours: text('operatingHours'),
+    receiptNo: text('receiptNo'),
+    road: text('road'),
+    issuedBy: text('issuedBy'),
+    txDate: text('txDate'),
+    mode: text('mode'),
+    metadata: text('metadata'), // Legacy JSON (kept for backwards compat)
     createdAt: timestamp('created_at').defaultNow(),
 });
 

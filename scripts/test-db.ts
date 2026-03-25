@@ -1,6 +1,6 @@
 
 import { db } from '@/lib/db';
-import { users } from '@/lib/schema';
+import { users, permits } from '@/lib/schema';
 import { eq } from 'drizzle-orm';
 
 async function main() {
@@ -9,13 +9,17 @@ async function main() {
         const username = 'admin';
         console.log(`Querying for user: ${username}`);
         const foundUser = await db.select().from(users).where(eq(users.username, username)).limit(1);
-        console.log('Result:', foundUser);
+        console.log('User Result:', foundUser);
+
+        const serialNum = 600;
+        console.log(`Querying for permit with serialNumber: ${serialNum}`);
+        const foundPermit = await db.select().from(permits).where(eq(permits.serialNumber, serialNum)).limit(1);
+        console.log('Permit Result:', foundPermit);
+
     } catch (error: any) {
         console.error('Test Failed!');
-        console.error('Error Name:', error.name);
         console.error('Error Message:', error.message);
-        if (error.cause) console.error('Error Cause:', error.cause);
-        console.error('Full Error:', error);
+        console.error('Error Stack:', error.stack);
     }
     process.exit(0);
 }

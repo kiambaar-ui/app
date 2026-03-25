@@ -29,59 +29,86 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
     try {
-        const formData = await request.formData();
+        const contentType = request.headers.get('content-type') || '';
+        const isJson = contentType.includes('application/json');
+        
+        let rawData: Record<string, any> = {};
 
-        // Get count to determine next serial number (simplistic fallback if sequence not adjusted)
-        const lastPermit = await db.select().from(permits).orderBy(desc(permits.serialNumber)).limit(1);
-        const nextSerial = lastPermit.length > 0 ? (lastPermit[0].serialNumber || 599) + 1 : 600;
-
-        const id = randomUUID().substring(0, 12);
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || `${request.nextUrl.protocol}//${request.nextUrl.host}`;
-        const verifyUrl = `${appUrl}/verify-liquor-permit/${nextSerial}`;
-
-        // Extract metadata fields
-        const metadata: Record<string, string> = {};
-        for (const [key, value] of formData.entries()) {
-            if (key.startsWith('metadata_')) {
-                metadata[key.replace('metadata_', '')] = value as string;
-            }
+        if (isJson) {
+            rawData = await request.json();
+        } else {
+            const formData = await request.formData();
+            formData.forEach((value, key) => { rawData[key] = value; });
         }
 
-        // Extract data
+        // Determine next serial number
+        let nextSerial;
+        if (rawData.serialNumber) {
+            nextSerial = parseInt(rawData.serialNumber);
+            if (isNaN(nextSerial)) {
+                return NextResponse.json({ error: 'Serial number must be a valid number' }, { status: 400 });
+            }
+            // Verify uniqueness
+            const exists = await db.select().from(permits).where(eq(permits.serialNumber, nextSerial)).limit(1);
+            if (exists.length > 0) {
+                return NextResponse.json({ error: 'Serial number already in use' }, { status: 400 });
+            }
+        } else {
+            const lastPermit = await db.select().from(permits).orderBy(desc(permits.serialNumber)).limit(1);
+            nextSerial = lastPermit.length > 0 ? (lastPermit[0].serialNumber || 599) + 1 : 600;
+        }
+
+        const id = randomUUID().substring(0, 12);
+
+        // Extract data defensively against both JSON strings and FormData strings
         const permitData: any = {
             id,
-            businessName: formData.get('businessName') as string,
-            businessId: formData.get('businessId') as string,
-            addressPoBox: formData.get('addressPoBox') as string,
-            phone: formData.get('phone') as string,
-            subcounty: formData.get('subcounty') as string,
-            ward: formData.get('ward') as string,
-            market: formData.get('market') as string,
-            plotNo: formData.get('plotNo') as string,
-            activity: formData.get('activity') as string,
-            amount: formData.get('amount') as string,
-            amountInWords: formData.get('amountInWords') as string,
-            issueDateIso: (formData.get('issueDateIso') && !isNaN(new Date(formData.get('issueDateIso') as string).getTime())) ? new Date(formData.get('issueDateIso') as string) : null,
-            expiryDate: formData.get('expiryDate') as string || '',
-            expiryDateIso: (formData.get('expiryDateIso') && !isNaN(new Date(formData.get('expiryDateIso') as string).getTime())) ? new Date(formData.get('expiryDateIso') as string) : null,
-            status: formData.get('status') as string || 'Valid',
-            ownerName: formData.get('ownerName') as string,
-            ownerEmail: formData.get('ownerEmail') as string,
-            ownerPhone: formData.get('ownerPhone') as string,
-            paidForYear: formData.get('paidForYear') as string || new Date().getFullYear().toString(),
-            renewalStatus: formData.get('renewalStatus') as string || 'New',
-            templateName: formData.get('templateName') as string || 'Liquor Permit Template',
-            backgroundId: formData.get('backgroundId') ? parseInt(formData.get('backgroundId') as string) : null,
-            metadata: JSON.stringify(metadata),
+            serialNumber: nextSerial,
+            licenseNumber: rawData.licenseNumber || '',
+            businessName: rawData.businessName || '',
+            businessId: rawData.businessId || '',
+            addressPoBox: rawData.addressPoBox || '',
+            phone: rawData.phone || '',
+            subcounty: rawData.subcounty || '',
+            ward: rawData.ward || '',
+            market: rawData.market || '',
+            plotNo: rawData.plotNo || '',
+            activity: rawData.activity || '',
+            amount: rawData.amount || '',
+            amountInWords: rawData.amountInWords || '',
+            issueDate: rawData.issueDate || rawData.issueDateIso || '',
+            issueDateIso: (rawData.issueDateIso && !isNaN(new Date(rawData.issueDateIso).getTime())) ? new Date(rawData.issueDateIso) : null,
+            expiryDate: rawData.expiryDate || rawData.expiryDateIso || '',
+            expiryDateIso: (rawData.expiryDateIso && !isNaN(new Date(rawData.expiryDateIso).getTime())) ? new Date(rawData.expiryDateIso) : null,
+            status: rawData.status || 'Valid',
+            ownerName: rawData.ownerName || '',
+            ownerEmail: rawData.ownerEmail || '',
+            ownerPhone: rawData.ownerPhone || '',
+            paidForYear: rawData.paidForYear || new Date().getFullYear().toString(),
+            renewalStatus: rawData.renewalStatus || 'New',
+            templateName: rawData.templateName || 'Liquor Permit Template',
+            backgroundId: rawData.backgroundId ? parseInt(rawData.backgroundId) : null,
+            operatingHours: rawData.metadata_operatingHours || rawData.operatingHours || '',
+            receiptNo: rawData.metadata_receiptNo || rawData.receiptNo || '',
+            road: rawData.metadata_road || rawData.road || '',
+            issuedBy: rawData.metadata_issuedBy || rawData.issuedBy || 'Bernad Kariuki -Chair',
+            txDate: rawData.txDate || rawData.issueDate || '',
+            mode: rawData.mode || 'M-Pesa',
         };
 
-        // If we want to force the serialNumber to follow our logic:
-        permitData.serialNumber = nextSerial;
+        if (isJson && permitData.txDate && permitData.txDate.includes('T')) {
+            // Clean up ISO txDate if passed from JSON
+            permitData.txDate = permitData.txDate.split('T')[0];
+        }
 
         await db.insert(permits).values(permitData);
 
-        // Redirect to home or specific permit view
-        return NextResponse.redirect(new URL(`/permit/${nextSerial}`, request.url), 303);
+        if (isJson) {
+            return NextResponse.json({ success: true, serialNumber: nextSerial });
+        } else {
+            // Redirect to home or specific permit view
+            return NextResponse.redirect(new URL(`/permit/${nextSerial}`, request.url), 303);
+        }
     } catch (error) {
         console.error('Error creating permit:', error);
         return NextResponse.json({ error: 'Failed to create permit' }, { status: 500 });
