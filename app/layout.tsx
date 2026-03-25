@@ -1,3 +1,4 @@
+// Triggering Vercel Redeploy - 2026-03-25
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
