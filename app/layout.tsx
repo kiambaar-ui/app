@@ -11,6 +11,10 @@ export const metadata: Metadata = {
   description: '',
 };
 
+export const func = () => {
+  console.log("Hello World");
+}
+
 export default function RootLayout({
   children,
 }: {
