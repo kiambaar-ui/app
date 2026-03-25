@@ -13,7 +13,9 @@ export const metadata: Metadata = {
 export default async function NewPermitPage() {
     // We fetch available backgrounds to optionally pass them in, but PermitView handles fetching now anyway.
     // For a new permit, we start with completely blank default data.
-    
+
+    // Add default values for the new fields
+
     const emptyPermit = {
         serialNumber: 'new', // This triggers POST mode inside PermitView
         businessName: '',
